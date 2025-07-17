@@ -1,0 +1,759 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// NextAuth.js models
+model Account {
+  id                       String  @id @default(cuid())
+  userId                   String
+  type                     String
+  provider                 String
+  providerAccountId        String
+  refresh_token            String?
+  access_token             String?
+  expires_at               Int?
+  token_type               String?
+  scope                    String?
+  id_token                 String?
+  session_state            String?
+  refresh_token_expires_in Int?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// User management
+enum Role {
+  CUSTOMER
+  ADMIN
+  DELIVERY_DRIVER
+  KITCHEN_STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // For email/password authentication
+  phone         String?
+  role          Role      @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  
+  // Driver specific fields
+  driverProfile DriverProfile?
+  deliveries    Order[] @relation("DeliveryDriver")
+  deliveryRoutes DeliveryRoute[] @relation("DeliveryRoutes")
+
+  // Additional relations for new models
+  loyalty                     UserLoyalty?
+  loyaltyTransactions         LoyaltyTransaction[]
+  achievements                UserAchievement[]
+  driverLocation              DriverLocation?       @relation("DriverLocation")
+  deliveryTrackingLogs        DeliveryTrackingLog[] @relation("DeliveryTracking")
+  notifications               Notification[]
+  notificationLogs            NotificationLog[]
+  notificationPreferences     UserNotificationPreference?
+  securityLogs                SecurityLog[]
+
+  @@map("users")
+}
+
+model Address {
+  id           String  @id @default(cuid())
+  userId       String
+  name         String  // e.g., "Home", "Work"
+  street       String
+  city         String
+  zipCode      String
+  country      String  @default("Serbia")
+  isDefault    Boolean @default(false)
+  instructions String? // Delivery instructions
+  
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@map("addresses")
+}
+
+model DriverProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  licenseNumber String  @unique
+  vehicleType  String
+  vehiclePlate String
+  isAvailable  Boolean  @default(false)
+  rating       Float    @default(5.0)
+  totalDeliveries Int   @default(0)
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("driver_profiles")
+}
+
+// Product management
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  OUT_OF_STOCK
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  image       String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  description String
+  image       String?
+  basePrice   Float
+  categoryId  String
+  status      ProductStatus @default(ACTIVE)
+  isVegetarian Boolean      @default(false)
+  isVegan     Boolean       @default(false)
+  isGlutenFree Boolean     @default(false)
+  isSpicy     Boolean       @default(false)
+  calories    Int?
+  prepTime    Int          // in minutes
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  category        Category      @relation(fields: [categoryId], references: [id])
+  sizes           ProductSize[]
+  toppings        ProductTopping[]
+  ingredients     ProductIngredient[]
+  orderItems      OrderItem[]
+
+  @@map("products")
+}
+
+enum SizeType {
+  SMALL
+  MEDIUM
+  LARGE
+  EXTRA_LARGE
+}
+
+model ProductSize {
+  id        String   @id @default(cuid())
+  productId String
+  size      SizeType
+  name      String   // e.g., "Small (25cm)", "Medium (30cm)"
+  price     Float    // Additional price for this size
+  isDefault Boolean  @default(false)
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@unique([productId, size])
+  @@map("product_sizes")
+}
+
+model Topping {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  price       Float
+  isVegetarian Boolean @default(true)
+  isVegan     Boolean @default(false)
+  isGlutenFree Boolean @default(true)
+  isActive    Boolean @default(true)
+  image       String?
+
+  productToppings   ProductTopping[]
+  orderItemToppings OrderItemTopping[]
+
+  @@map("toppings")
+}
+
+model ProductTopping {
+  id        String @id @default(cuid())
+  productId String
+  toppingId String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  topping Topping @relation(fields: [toppingId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, toppingId])
+  @@map("product_toppings")
+}
+
+// Ingredient management system
+model Ingredient {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  unit        String  // e.g., "grams", "pieces", "ml"
+  costPerUnit Float
+  isActive    Boolean @default(true)
+  allergens   String? // Comma-separated allergen information
+  nutritionalValue Json? // Nutritional information per unit
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  products      ProductIngredient[]
+  inventoryItem InventoryItem?
+  orderItemCustomizations OrderItemCustomization[]
+
+  @@map("ingredients")
+}
+
+model ProductIngredient {
+  id           String  @id @default(cuid())
+  productId    String
+  ingredientId String
+  quantity     Float   // Required quantity of ingredient for this product
+  isOptional   Boolean @default(false) // Can customer add/remove this ingredient
+  isDefault    Boolean @default(true)  // Is included by default
+  extraCost    Float   @default(0)     // Additional cost if customer adds this ingredient
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, ingredientId])
+  @@map("product_ingredients")
+}
+
+model InventoryItem {
+  id            String    @id @default(cuid())
+  ingredientId  String    @unique
+  currentStock  Float
+  minimumStock  Float
+  maximumStock  Float?
+  reorderPoint  Float
+  supplier      String?
+  supplierContact String?
+  costPrice     Float
+  lastRestocked DateTime?
+  expiryDate    DateTime?
+  location      String?   // Storage location
+  batchNumber   String?
+  isPerishable  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  movements  StockMovement[]
+
+  @@map("inventory_items")
+}
+
+enum StockMovementType {
+  IN          // Stock received
+  OUT         // Stock used
+  ADJUSTMENT  // Manual adjustment
+  EXPIRED     // Stock expired
+  DAMAGED     // Stock damaged
+}
+
+model StockMovement {
+  id              String            @id @default(cuid())
+  inventoryItemId String
+  type            StockMovementType
+  quantity        Float             // Positive for IN, negative for OUT
+  reason          String?
+  reference       String?           // Order ID, supplier invoice, etc.
+  cost            Float?            // Cost per unit for this movement
+  performedBy     String            // User ID who performed the movement
+  createdAt       DateTime          @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@map("stock_movements")
+}
+
+// Order management
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  orderNumber    String        @unique
+  userId         String
+  addressId      String
+  status         OrderStatus   @default(PENDING)
+  paymentStatus  PaymentStatus @default(PENDING)
+  paymentMethod  PaymentMethod
+  subtotal       Float
+  deliveryFee    Float
+  tax            Float
+  total          Float
+  notes          String?
+  estimatedDelivery DateTime?
+  deliveredAt    DateTime?
+  driverId       String?
+  deliveryRouteId String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user          User       @relation(fields: [userId], references: [id])
+  address       Address    @relation(fields: [addressId], references: [id])
+  driver        User?      @relation("DeliveryDriver", fields: [driverId], references: [id])
+  deliveryRoute DeliveryRoute? @relation(fields: [deliveryRouteId], references: [id])
+  items         OrderItem[]
+  tracking      OrderTracking[]
+  reviews       Review[]
+  loyaltyTransactions   LoyaltyTransaction[]
+  deliveryTrackingLogs  DeliveryTrackingLog[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  orderId       String
+  productId     String
+  productSizeId String?
+  quantity      Int
+  price         Float
+  specialInstructions String?
+  customizations Json?   // Store ingredient customizations as JSON
+
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product           @relation(fields: [productId], references: [id])
+  productSize ProductSize?      @relation(fields: [productSizeId], references: [id])
+  toppings    OrderItemTopping[]
+  ingredientCustomizations OrderItemCustomization[]
+
+  @@map("order_items")
+}
+
+model OrderItemCustomization {
+  id           String @id @default(cuid())
+  orderItemId  String
+  ingredientId String
+  action       String // "ADD", "REMOVE", "EXTRA"
+  quantity     Float?
+  extraCost    Float  @default(0)
+
+  orderItem  OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([orderItemId, ingredientId, action])
+  @@map("order_item_customizations")
+}
+
+model OrderItemTopping {
+  id          String @id @default(cuid())
+  orderItemId String
+  toppingId   String
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  topping   Topping   @relation(fields: [toppingId], references: [id])
+
+  @@unique([orderItemId, toppingId])
+  @@map("order_item_toppings")
+}
+
+model OrderTracking {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  message   String?
+  timestamp DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_tracking")
+}
+
+// Reviews and ratings
+model Review {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  userId       String
+  rating       Int      // 1-5 stars
+  comment      String?
+  deliveryRating Int?   // Separate rating for delivery
+  foodRating   Int?     // Separate rating for food quality
+  createdAt    DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("reviews")
+}
+
+// Delivery management
+enum DeliveryRouteStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model DeliveryRoute {
+  id              String              @id @default(cuid())
+  driverId        String
+  status          DeliveryRouteStatus @default(PLANNED)
+  estimatedDuration Int               // in minutes
+  actualDuration    Int?              // in minutes
+  totalDistance     Float?            // in kilometers
+  startLocation     Json?             // Starting point coordinates
+  endLocation       Json?             // End point coordinates
+  waypoints         Json?             // Intermediate delivery points
+  notes             String?
+  createdAt         DateTime          @default(now())
+  completedAt       DateTime?
+  updatedAt         DateTime          @updatedAt
+
+  driver User    @relation("DeliveryRoutes", fields: [driverId], references: [id])
+  orders Order[]
+
+  @@map("delivery_routes")
+}
+
+// Promotions and coupons
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_DELIVERY
+}
+
+model Coupon {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  name        String
+  description String?
+  type        CouponType
+  value       Float      // Percentage or fixed amount
+  minOrderAmount Float?
+  maxDiscount Float?     // For percentage coupons
+  usageLimit  Int?       // Total usage limit
+  usedCount   Int        @default(0)
+  isActive    Boolean    @default(true)
+  validFrom   DateTime
+  validUntil  DateTime
+  createdAt   DateTime   @default(now())
+
+  @@map("coupons")
+}
+
+// Store settings and configuration
+model StoreSettings {
+  id                String   @id @default("store_settings")
+  storeName         String   @default("Spago Pizza")
+  phoneNumber       String?
+  email             String?
+  address           String?
+  deliveryRadius    Float    @default(10) // in kilometers
+  minOrderAmount    Float    @default(10)
+  deliveryFee       Float    @default(3)
+  freeDeliveryThreshold Float? @default(25)
+  taxRate           Float    @default(0.20) // 20% tax
+  isOpen            Boolean  @default(true)
+  openingHours      Json?    // Store opening hours
+  estimatedDeliveryTime Int  @default(30) // in minutes
+  updatedAt         DateTime @updatedAt
+
+  @@map("store_settings")
+}
+
+// Analytics and reporting
+model DailyStats {
+  id           String   @id @default(cuid())
+  date         DateTime @unique
+  totalOrders  Int      @default(0)
+  totalRevenue Float    @default(0)
+  avgOrderValue Float   @default(0)
+  deliveredOrders Int   @default(0)
+  cancelledOrders Int   @default(0)
+
+  @@map("daily_stats")
+}
+
+// Indexes for performance optimization
+// User indexes
+// @@index([email]) - already unique
+// @@index([role])
+// @@index([status])
+
+// Product indexes  
+// @@index([categoryId])
+// @@index([status])
+// @@index([slug]) - already unique
+// @@index([isVegetarian])
+// @@index([isVegan])
+
+// Order indexes
+// @@index([userId])
+// @@index([status])
+// @@index([createdAt])
+// @@index([orderNumber]) - already unique
+
+// Inventory indexes
+// @@index([ingredientId]) - already unique
+// @@index([currentStock])
+// @@index([minimumStock])
+
+// Performance indexes are commented out above for reference
+// They can be added by uncommenting and adding to respective models
+
+// Loyalty System Models
+model UserLoyalty {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  points        Int      @default(0)
+  tier          String   @default("bronze") // bronze, silver, gold, platinum
+  totalSpent    Float    @default(0)
+  totalOrders   Int      @default(0)
+  lastActivity  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_loyalty")
+}
+
+model LoyaltyTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  orderId     String?
+  type        String   // earned, redeemed, expired, bonus
+  points      Int
+  description String
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@map("loyalty_transactions")
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// Delivery Tracking Models
+model DriverLocation {
+  id         String   @id @default(cuid())
+  driverId   String   @unique
+  latitude   Float
+  longitude  Float
+  accuracy   Float?
+  heading    Float?
+  speed      Float?
+  timestamp  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  driver User @relation("DriverLocation", fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_locations")
+}
+
+model DeliveryTrackingLog {
+  id          String   @id @default(cuid())
+  orderId     String
+  driverId    String?
+  status      OrderStatus
+  latitude    Float?
+  longitude   Float?
+  notes       String?
+  timestamp   DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver User? @relation("DeliveryTracking", fields: [driverId], references: [id])
+
+  @@map("delivery_tracking_logs")
+}
+
+// Notification System Models
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  type      String   // info, warning, error, success
+  channel   String   // push, email, sms, in_app
+  status    String   @default("pending") // pending, sent, delivered, failed
+  data      Json?    // Additional notification data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  channel      String
+  recipient    String
+  template     String?
+  status       String   // sent, delivered, failed, bounced
+  errorMessage String?
+  sentAt       DateTime @default(now())
+  deliveredAt  DateTime?
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("notification_logs")
+}
+
+model UserNotificationPreference {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  email        Boolean  @default(true)
+  push         Boolean  @default(true)
+  sms          Boolean  @default(false)
+  whatsapp     Boolean  @default(false)
+  orderUpdates Boolean  @default(true)
+  promotions   Boolean  @default(true)
+  newsletters  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_preferences")
+}
+
+// Monitoring Models
+model PerformanceLog {
+  id               String   @id @default(cuid())
+  metric           String
+  value            Float
+  unit             String?
+  category         String   // server, database, application, business
+  metadata         Json?
+  timestamp        DateTime @default(now())
+
+  @@map("performance_logs")
+}
+
+model SecurityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String?
+  ip          String?
+  userAgent   String?
+  success     Boolean
+  errorCode   String?
+  details     Json?
+  timestamp   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("security_logs")
+}
+ 
+ / /   L o y a l t y   S y s t e m   M o d e l s 
+ m o d e l   U s e r L o y a l t y   { 
+     i d                         S t r i n g       @ i d   @ d e f a u l t ( c u i d ( ) ) 
+     u s e r I d                 S t r i n g       @ u n i q u e 
+     p o i n t s                 I n t             @ d e f a u l t ( 0 ) 
+     t i e r                     S t r i n g       @ d e f a u l t ( " b r o n z e " )   / /   b r o n z e ,   s i l v e r ,   g o l d ,   p l a t i n u m 
+     t o t a l S p e n t         F l o a t         @ d e f a u l t ( 0 ) 
+     t o t a l O r d e r s       I n t             @ d e f a u l t ( 0 ) 
+     l a s t A c t i v i t y     D a t e T i m e   @ d e f a u l t ( n o w ( ) ) 
+     c r e a t e d A t           D a t e T i m e   @ d e f a u l t ( n o w ( ) ) 
+     u p d a t e d A t           D a t e T i m e   @ u p d a t e d A t 
+ 
+     u s e r   U s e r   @ r e l a t i o n ( f i e l d s :   [ u s e r I d ] ,   r e f e r e n c e s :   [ i d ] ,   o n D e l e t e :   C a s c a d e ) 
+ 
+     @ @ m a p ( " u s e r _ l o y a l t y " ) 
+ } 
+ 
+ m o d e l   L o y a l t y T r a n s a c t i o n   { 
+     i d                     S t r i n g       @ i d   @ d e f a u l t ( c u i d ( ) ) 
+     u s e r I d             S t r i n g 
+     o r d e r I d           S t r i n g ? 
+     t y p e                 S t r i n g       / /   e a r n e d ,   r e d e e m e d ,   e x p i r e d ,   b o n u s 
+     p o i n t s             I n t 
+     d e s c r i p t i o n   S t r i n g 
+     c r e a t e d A t       D a t e T i m e   @ d e f a u l t ( n o w ( ) ) 
+ 
+     u s e r     U s e r       @ r e l a t i o n ( f i e l d s :   [ u s e r I d ] ,   r e f e r e n c e s :   [ i d ] ,   o n D e l e t e :   C a s c a d e ) 
+     o r d e r   O r d e r ?   @ r e l a t i o n ( f i e l d s :   [ o r d e r I d ] ,   r e f e r e n c e s :   [ i d ] ) 
+ 
+     @ @ m a p ( " l o y a l t y _ t r a n s a c t i o n s " ) 
+ }  
+ 
