@@ -77,10 +77,10 @@ const authOptions = {
 
 const handler = NextAuth(authOptions)
 
-export async function GET(request: Request) {
-  return handler(request)
+export async function GET(request: Request, { params }: { params: { nextauth: string[] } }) {
+  return handler(request, { params })
 }
 
-export async function POST(request: Request) {
-  return handler(request)
+export async function POST(request: Request, { params }: { params: { nextauth: string[] } }) {
+  return handler(request, { params })
 }
