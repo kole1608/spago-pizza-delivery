@@ -6,13 +6,14 @@ import { ZodError } from 'zod'
 import superjson from 'superjson'
 
 // Create context for tRPC
-export const createTRPCContext = async (opts: { headers: Headers }) => {
+export const createTRPCContext = async (opts: { req: Request; headers: Headers }) => {
   const session = await getServerSession(authOptions)
 
   return {
     db,
     session,
-    ...opts,
+    req: opts.req,
+    headers: opts.headers,
   }
 }
 
