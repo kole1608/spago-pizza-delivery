@@ -65,6 +65,8 @@ model User {
   loyaltyTransactions LoyaltyTransaction[]
   userAchievements UserAchievement[]
   driverOrders     Order[] @relation("DriverOrders")
+  deliveryRoutes   DeliveryRoute[]
+  userLoyalty      UserLoyalty?
 
   @@map("users")
 }
