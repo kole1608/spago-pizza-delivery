@@ -48,16 +48,22 @@ model User {
   email           String    @unique
   emailVerified   DateTime?
   image           String?
-  role            String    @default("USER") // USER, ADMIN, DRIVER, KITCHEN_STAFF
+  password        String?
+  role            String    @default("CUSTOMER") // CUSTOMER, ADMIN, DELIVERY_DRIVER, KITCHEN_STAFF
   phone           String?
   address         String?
   isActive        Boolean   @default(true)
+  stripeCustomerId String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   accounts         Account[]
   sessions         Session[]
   orders           Order[]
+  addresses        Address[]
+  reviews          Review[]
+  loyaltyTransactions LoyaltyTransaction[]
+  userAchievements UserAchievement[]
 
   @@map("users")
 }
@@ -99,35 +105,111 @@ model Product {
   isActive    Boolean @default(true)
   isVegetarian Boolean @default(false)
   isVegan      Boolean @default(false)
+  isGlutenFree Boolean @default(false)
   prepTime     Int     @default(15) // in minutes
   calories     Int?
+  sortOrder    Int     @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   category     Category @relation(fields: [categoryId], references: [id])
   orderItems   OrderItem[]
+  productSizes ProductSize[]
+  productToppings ProductTopping[]
+  ingredients  ProductIngredient[]
 
   @@map("products")
 }
 
+model ProductSize {
+  id        String @id @default(cuid())
+  productId String
+  name      String
+  size      String // SMALL, MEDIUM, LARGE
+  price     Float
+  isDefault Boolean @default(false)
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@map("product_sizes")
+}
+
+model Topping {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  price        Float
+  isVegetarian Boolean @default(true)
+  isVegan      Boolean @default(false)
+  isActive     Boolean @default(true)
+  createdAt    DateTime @default(now())
+
+  productToppings ProductTopping[]
+  orderItemToppings OrderItemTopping[]
+
+  @@map("toppings")
+}
+
+model ProductTopping {
+  id        String @id @default(cuid())
+  productId String
+  toppingId String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  topping Topping @relation(fields: [toppingId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, toppingId])
+  @@map("product_toppings")
+}
+
+model Address {
+  id           String  @id @default(cuid())
+  userId       String
+  name         String
+  street       String
+  city         String
+  zipCode      String
+  country      String  @default("Serbia")
+  instructions String?
+  isDefault    Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@map("addresses")
+}
+
 model Order {
   id                String      @id @default(cuid())
+  orderNumber       String      @unique
   userId            String
+  addressId         String
+  driverId          String?
+  storeId           String      @default("store_001")
   status            String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, OUT_FOR_DELIVERY, DELIVERED, CANCELLED
   paymentStatus     String      @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
-  paymentMethod     String?     // "card", "cash", "online"
+  paymentMethod     String?     // "CARD", "CASH", "ONLINE"
+  stripePaymentIntentId String?
   subtotal          Float
-  taxAmount         Float
+  taxAmount         Float       @default(0)
   deliveryFee       Float       @default(0)
   totalAmount       Float
   specialInstructions String?
-  estimatedDeliveryTime DateTime?
-  actualDeliveryTime DateTime?
+  estimatedDelivery DateTime?
+  actualDelivery    DateTime?
+  paidAt            DateTime?
+  deliveredAt       DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
   user              User          @relation(fields: [userId], references: [id])
+  address           Address       @relation(fields: [addressId], references: [id])
+  driver            User?         @relation(fields: [driverId], references: [id])
   items             OrderItem[]
+  tracking          OrderTracking[]
+  reviews           Review[]
 
   @@map("orders")
 }
@@ -136,13 +218,210 @@ model OrderItem {
   id          String @id @default(cuid())
   orderId     String
   productId   String
+  productSizeId String?
   quantity    Int
   unitPrice   Float
   totalPrice  Float
-  notes       String?
+  specialInstructions String?
 
   order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product  Product     @relation(fields: [productId], references: [id])
+  productSize ProductSize? @relation(fields: [productSizeId], references: [id])
+  toppings OrderItemTopping[]
 
   @@map("order_items")
+}
+
+model OrderItemTopping {
+  id          String @id @default(cuid())
+  orderItemId String
+  toppingId   String
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  topping   Topping   @relation(fields: [toppingId], references: [id])
+
+  @@unique([orderItemId, toppingId])
+  @@map("order_item_toppings")
+}
+
+model OrderTracking {
+  id        String   @id @default(cuid())
+  orderId   String
+  status    String
+  message   String
+  timestamp DateTime @default(now())
+  driverLocation String? // JSON string for lat/lng
+  metadata  String? // JSON string for additional data
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_tracking")
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  userId        String
+  rating        Int      // 1-5
+  comment       String?
+  deliveryRating Int?    // 1-5
+  foodRating    Int?     // 1-5
+  createdAt     DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("reviews")
+}
+
+// Inventory Management
+model InventoryItem {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  category      String
+  currentStock  Int      @default(0)
+  minimumStock  Int      @default(10)
+  unit          String   // kg, liters, pieces, etc.
+  costPerUnit   Float
+  supplier      String?
+  lastRestocked DateTime?
+  expiryDate    DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  stockMovements    StockMovement[]
+  productIngredients ProductIngredient[]
+
+  @@map("inventory_items")
+}
+
+model StockMovement {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  type            String   // IN, OUT, ADJUSTMENT
+  quantity        Int
+  reason          String
+  performedBy     String
+  createdAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@map("stock_movements")
+}
+
+model ProductIngredient {
+  id              String @id @default(cuid())
+  productId       String
+  inventoryItemId String
+  quantity        Float  // Amount needed per product unit
+
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient    InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([productId, inventoryItemId])
+  @@map("product_ingredients")
+}
+
+// Store Management
+model StoreSettings {
+  id                    String  @id @default("store_settings")
+  storeName             String  @default("Spago Pizza")
+  phoneNumber           String  @default("+381 11 123 4567")
+  email                 String  @default("info@spagopizza.com")
+  address               String  @default("Belgrade, Serbia")
+  deliveryRadius        Float   @default(15.0) // km
+  minOrderAmount        Float   @default(10.0)
+  deliveryFee           Float   @default(3.0)
+  freeDeliveryThreshold Float   @default(25.0)
+  taxRate               Float   @default(0.20) // 20%
+  isOpen                Boolean @default(true)
+  estimatedDeliveryTime Int     @default(30) // minutes
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("store_settings")
+}
+
+// Delivery Management
+model DeliveryRoute {
+  id              String   @id @default(cuid())
+  driverId        String
+  storeId         String
+  status          String   @default("PLANNED") // PLANNED, ACTIVE, COMPLETED, CANCELLED
+  totalDistance   Float    // in meters
+  totalDuration   Int      // in minutes
+  totalValue      Float    // total order value
+  efficiencyScore Float    // 0-100
+  stops           String   // JSON array of stops
+  polyline        String?  // encoded polyline for map
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  driver User @relation(fields: [driverId], references: [id])
+
+  @@map("delivery_routes")
+}
+
+// Loyalty System
+model LoyaltyTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  points      Int
+  type        String   // EARNED, REDEEMED
+  reason      String
+  referenceId String?  // Order ID or other reference
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("loyalty_transactions")
+}
+
+model UserLoyalty {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  points      Int      @default(0)
+  tier        String   @default("bronze") // bronze, silver, gold, platinum
+  totalSpent  Float    @default(0)
+  totalOrders Int      @default(0)
+  lastActivity DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_loyalty")
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// Coupons
+model Coupon {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  type            String   // PERCENTAGE, FIXED_AMOUNT, FREE_DELIVERY
+  value           Float    // percentage or fixed amount
+  minOrderAmount  Float?
+  maxDiscount     Float?
+  maxUses         Int?
+  currentUses     Int      @default(0)
+  isActive        Boolean  @default(true)
+  validFrom       DateTime @default(now())
+  validUntil      DateTime
+  createdAt       DateTime @default(now())
+
+  @@map("coupons")
 }
