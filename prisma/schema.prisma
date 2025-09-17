@@ -64,7 +64,7 @@ model User {
   reviews          Review[]
   loyaltyTransactions LoyaltyTransaction[]
   userAchievements UserAchievement[]
-  driverOrders     Order[] @relation("OrderToDriver")
+  driverOrders     Order[] @relation("DriverOrders")
 
   @@map("users")
 }
@@ -207,7 +207,7 @@ model Order {
 
   user              User          @relation(fields: [userId], references: [id])
   address           Address       @relation(fields: [addressId], references: [id])
-  driver            User?         @relation("OrderToDriver", fields: [driverId], references: [id])
+  driver            User?         @relation("DriverOrders", fields: [driverId], references: [id])
   items             OrderItem[]
   tracking          OrderTracking[]
   reviews           Review[]
