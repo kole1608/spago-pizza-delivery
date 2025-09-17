@@ -4,6 +4,8 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@next-auth/prisma-adapter'
 import { db } from './db'
 import bcrypt from 'bcryptjs'
+import { getServerSession } from 'next-auth'
+import { headers, cookies } from 'next/headers'
 
 // Define Role enum temporarily until Prisma generates types
 enum Role {
@@ -80,6 +82,11 @@ export const authOptions: NextAuthOptions = {
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
+}
+
+// Helper function to get session in App Router context
+export const getAuthSession = async () => {
+  return await getServerSession(authOptions)
 }
 
 declare module 'next-auth' {
