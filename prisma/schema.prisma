@@ -59,11 +59,12 @@ model User {
 
   accounts         Account[]
   sessions         Session[]
-  orders           Order[]
+  orders           Order[] @relation("OrderToUser")
   addresses        Address[]
   reviews          Review[]
   loyaltyTransactions LoyaltyTransaction[]
   userAchievements UserAchievement[]
+  driverOrders     Order[] @relation("OrderToDriver")
 
   @@map("users")
 }
@@ -206,7 +207,7 @@ model Order {
 
   user              User          @relation(fields: [userId], references: [id])
   address           Address       @relation(fields: [addressId], references: [id])
-  driver            User?         @relation(fields: [driverId], references: [id])
+  driver            User?         @relation("OrderToDriver", fields: [driverId], references: [id])
   items             OrderItem[]
   tracking          OrderTracking[]
   reviews           Review[]
