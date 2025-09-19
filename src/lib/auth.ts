@@ -83,11 +83,6 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 }
 
-// Helper function to get session in App Router context
-export const getAuthSession = async () => {
-  return await getServerSession(authOptions)
-}
-
 declare module 'next-auth' {
   interface User {
     role: Role

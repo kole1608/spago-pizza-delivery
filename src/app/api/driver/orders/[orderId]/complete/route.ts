@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthSession } from '@/lib/auth'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(
@@ -7,7 +8,7 @@ export async function POST(
   { params }: { params: { orderId: string } }
 ) {
   try {
-    const session = await getAuthSession()
+    const session = await getServerSession(authOptions)
     
     if (!session?.user || session.user.role !== 'DELIVERY_DRIVER') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
