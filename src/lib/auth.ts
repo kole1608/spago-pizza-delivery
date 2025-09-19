@@ -5,7 +5,6 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter'
 import { db } from './db'
 import bcrypt from 'bcryptjs'
 import { getServerSession } from 'next-auth'
-import { headers, cookies } from 'next/headers'
 
 // Define Role enum temporarily until Prisma generates types
 enum Role {
