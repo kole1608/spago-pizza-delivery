@@ -4,15 +4,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@next-auth/prisma-adapter'
 import { db } from './db'
 import bcrypt from 'bcryptjs'
-import { getServerSession } from 'next-auth'
-
-// Define Role enum temporarily until Prisma generates types
-enum Role {
-  CUSTOMER = 'CUSTOMER',
-  ADMIN = 'ADMIN',
-  DELIVERY_DRIVER = 'DELIVERY_DRIVER',
-  KITCHEN_STAFF = 'KITCHEN_STAFF',
-}
+import { Role } from '@/types/auth'
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
